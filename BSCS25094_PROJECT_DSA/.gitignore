@@ -12,3 +12,6 @@ x86/
 *.log
 *.user
 *.suo
+resolve.bin
+session.tdbg
+server
