@@ -27,6 +27,8 @@ const int32_t MAX_PATCHES = MAX_FUNCS * 4;
 const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024; // sanity cap on the declared file length
 const int32_t IO_BUFFER_SIZE = 64 * 1024;                  // fixed buffer for streaming to/from disk
 const int32_t SOCKET_TIMEOUT_SEC = 5;                      // TODO: apply as SO_RCVTIMEO so a deadclient can't hang the server forever
+const int64_t NOT_PATCHED = -1;
+const int64_t END_OF_FILE = -2;
 
 // ---- Custom data structures
 
@@ -45,29 +47,64 @@ class Stack
 public:
     // Implement these functions:
     Stack()
-    { // initialize the stack
+    { 
+        top = nullptr;
+        count = 0;
+        // initialize the stack
     }
     void push(const T& val)
     {
+        if (count >= MAX_STACK_DEPTH) {
+            return;
+        }
+        Node* n = new Node;
 
-        // pushes the value on the stack if max limit is not reached yet.
+        n->data = val;
+        n->next = top; // pointing at the prev top
+        top = n;
+
+        count++;
+
     }
     T pop()
     {
-        // pop the top value on the stack
+        if (top == nullptr) {
+
+            return T();
+        }
+        Node* old = top;
+        T value = old->data;
+        top = old->next;
+        delete old;
+        count--;
+        return value;
     }
     T& peek()
     {
+        return top->data;
         // returns the top value on the stack
     }
     bool isEmpty()
     {
+        return count == 0;
+
     }
     int32_t depth()
     {
+        return count;
+
     }
     int32_t snapshot_into(T out[], int32_t maxLen)
     {
+        int32_t x = 0;
+        Node* cur = top;
+        while (cur != nullptr && x < maxLen)
+        {
+            out[x] = cur->data; // out[0] = top frame (the running function)
+            x++;
+            cur = cur->next;
+        }
+        return x;
         // copies every frame, top to bottom in the array given as a parameter
         // this is what buildSnapshot() call, returns count written
     }
@@ -91,16 +128,21 @@ public:
     // Implement these functions
     Timeline()
     {
+        head = nullptr;
+        tail = nullptr;
+        stepCount = 0;
     }
     void record(Snapshot* s)
     {
         // add record in the timeline
     }
     TimelineNode* begin()
+        return head;
     {
     }
     int32_t getStepCount()
     {
+        return head;
     }
 };
 
@@ -254,12 +296,45 @@ bool validateProgram(const char* sourcePath) {
 // PASS 0x1: RESOLVE() -> resolve.bin
 int64_t writeResolveRecord(FILE* f, int64_t offsetField, const string& text)
 {
+    int64_t mypos = ftell(f);
+    int32_t size = (int32_t)text.size();
+    fwrite(&offsetField, sizeof(int64_t), 1, f);
+    fwrite(&size, sizeof(int32_t), 1, f);
+
+    fwrite(text.c_str(), 1, size, f);
+
+    return mypos;
     // writes one [offset(8B)][size(4B)][string] record at the current file position
     // returns this record's own starting byte position
 }
 int64_t readResolveRecord(FILE* f, string& outText)
 {
+    int64_t offsetField = 0;
+    
+    int32_t size = 0;
+    if (fread(&offsetField, sizeof(int64_t), 1, f) != 1) {
+        return END_OF_FILE;
+    }
+    if (fread(&size, sizeof(int32_t), 1, f) != 1) {
+        return END_OF_FILE;
+
+    }
+    outtext.resize(size);
+    if (size > 0 && fread(&outText[0], 1, size, f) != (size_t)size) {
+        return END_OF_FILE;
+    }
+    return offsetField;
     // reads one record at the current position and advances past it, returns the offset field - the raw line text comes back untouched in outText.
+}
+int64_t findFunc(FuncEntry funcs[], int32_t ct, const string& name) {
+    for (int32_t i = 0; i < ct; i++) {
+        if (func[i].funcName == name) {
+
+
+            return funcs[i].byteOffsetInResolveBin;
+        }
+    }
+    return -1;
 }
 int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
 {
@@ -267,6 +342,67 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
     int32_t funcCount = 0;
     PendingPatch patches[MAX_PATCHES];
     int32_t patchCount = 0;
+    ifstream in(sourcePath);
+    if (!in) {
+        cerr << "File not found :(" << endl;
+
+    }
+    FILE* out = fopen(resolveBinPath, "w+b");
+    if (!out) {
+        cerr << "File cant be created :(" << endl;
+    }
+    int64_t curr_offset = 0;
+    string line;
+    while (readSourceLine(in, line)) {
+        string word = firstWord(line);
+        int64_t offsetField = curr_offset;
+        if (word == "func") {
+            if (funcCount >= MAX_FUNCS) {
+                cerr << "too many functions" << endl;
+                fclose(out);
+                return -1;
+            }
+            funcArray[funcCount].funcName = secondWord(line);
+            funcArray[funcCount].byteOffsetInResolveBin = curr_offset;
+            funcCount++;
+        }
+        else if (word == "call") {
+            if (patchCount >= MAX_PATCHES) {
+                cerr << "too many patches" << endl;
+                fclose(out);
+                return -1;
+            }
+            patches[patchCount].byteOffsetOfOffsetField = curr_offset;
+            patches[patchCount].targetFuncName = secondWord(line);
+            patchCount++;
+            offsetField = NOT_PATCHED;
+        }
+        writeResolveRecord(out, offsetField, line);
+        curr_offset = curr_offset + 8 + 4 + (int64_t)line.size();
+
+        int64_t mainOffset = findFunc(funcArray, funcCount, "main");
+        if (mainOffset < 0){
+        
+            cerr << "there's no main function" << endl;
+            fclose(out);
+            return -1;
+        }
+        for (int32_t i = 0; i < patchCount; i++) {
+            int64_t target = findFunc(funcArray, funcCount, patches[i].targetFuncName);
+            if (target < 0){
+                cerr << "Call to undefined function: " << patches[i].targetFuncName  << endl;
+                fclose(out);
+                return -1;
+            }
+            fseek(out, (long)patches[i].byteOffsetOfOffsetField, SEEK_SET); // go back
+            fwrite(&target, sizeof(int64_t), 1, out);
+        }
+
+
+    }
+    fclose(out);
+    return mainOffset;
+
     // Every source line becomes one record holding the raw line, as-is.
     // resolve() only PEEKS at the leading word(s) -- enough to spot FUNC
     // (remember its position) and CALL (remember which function it needs
@@ -320,7 +456,7 @@ void writeTdbg(Timeline& timeline, const char* tdbgPath)
     // update the header
 }
 // main section
-int32_t main()
+int32_t main2()
 {
 
     if (!validateProgram("source.bin"))
@@ -336,5 +472,14 @@ int32_t main()
 
     writeTdbg(timeline, "session.tdbg");
 
+    return 0;
+}
+int32_t main()
+{
+    if (!validateProgram("source.bin"))
+    {
+        return 1;
+    }
+    cout << "source.bin is valid" << endl;
     return 0;
 }
