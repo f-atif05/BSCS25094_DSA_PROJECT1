@@ -34,7 +34,7 @@ const int64_t END_OF_FILE = -2;
 
 // Stack: back the live Call Stack during execution
 template <typename T>
-class Stack
+class Stack // it is implemented as singly linked list, where the next is pointing to the node below it
 {
     struct Node
     {
@@ -51,6 +51,12 @@ public:
         top = nullptr;
         count = 0;
         // initialize the stack
+    }
+    ~Stack() {
+        while (top()) {
+            pop();
+
+        }
     }
     void push(const T& val)
     {
@@ -94,7 +100,7 @@ public:
         return count;
 
     }
-    int32_t snapshot_into(T out[], int32_t maxLen)
+    int32_t snapshot_into(T out[], int32_t maxLen) 
     {
         int32_t x = 0;
         Node* cur = top;
@@ -134,6 +140,23 @@ public:
     }
     void record(Snapshot* s)
     {
+        TimelineNode* x = new TimelineNode;
+        x->prev = tail;
+        x->data = s;
+        x->next = nullptr;
+
+        if (tail != nullptr) {
+            tail->next = node;
+        }
+        else {
+            head = node;
+            head = x;
+            tail = x;
+            stepCount++:
+
+        }
+       
+
         // add record in the timeline
     }
     TimelineNode* begin()
@@ -142,7 +165,7 @@ public:
     }
     int32_t getStepCount()
     {
-        return head;
+        return stepCount;
     }
 };
 
@@ -319,7 +342,7 @@ int64_t readResolveRecord(FILE* f, string& outText)
         return END_OF_FILE;
 
     }
-    outtext.resize(size);
+    outText.resize(size);
     if (size > 0 && fread(&outText[0], 1, size, f) != (size_t)size) {
         return END_OF_FILE;
     }
@@ -427,13 +450,123 @@ struct Token
 };
 int32_t tokenizeLine(const string& line, Token tokens[], int32_t maxTokens)
 {
+    int32_t ct = 0;
+    size_t pos = 0;
+    while (ctime < maxTokens) {
+        size_t start = line.find_first_not_of(" \t", pos);
+        if (start == string::npos) {
+            break;
+        }
+        size_t end = line.find_first_of(" \t", start);
+        if (end == string::npos) {
+            end = line.size();
+
+        }
+        tokens[ct].text = line.substr(start, end - start);
+        if (ct == 0) {
+           tokens[ct].type = KEYWORD;
+
+        }
+
+
+        else if (ct == 1) {
+            tokens[ct].type = IDENTIFIER;
+        }
+        else {
+            tokens[ct].type = PARAM;
+
+        }
+        ct++;
+        pos = end;
+    }
+    return ct;
+
     // first word is always a instruction keyword
     // instruction set = [func, func_end, call, set, add, sub, mul and div]
     // next word is identifier like name of a function, variable name
     // after identifier all are the params/arg, space separated
 }
+void makeFrame(Frame &f, Token tokens[], int32_t t_num_tokens, int32_t returnLine) {
+    f.func_name = tokens[1].text;
+
+    f.argc = t_num_tokens - 2;
+    for (int32_t i = 0; i < f.argc; i++) {
+         f.argv[i].name = tokens[2 + i].text;
+        f.argv[i].value = 0;
+    }
+    f.returnLine = returnLine;
+    f.localCount = 0;
+}
+
+Variable* findVar(Frame& f, const string& n) {
+    for (int32_t i = 0; i < f.argc; i++) {
+        if (f.argv[i].name == n) {
+            return &f.argv[i];
+
+        }
+    }
+    for (int32_t i = 0; i < f.localCount; i++) {
+        if (f.locals[i].name == n) {
+            return &f.locals[i];
+        }
+    }
+    return nullptr;
+}
+bool isNum(const string& n) {
+    if (n.empty()) {
+        return false;
+    }
+    size_t x = 0;
+        if (n[0] == '-') {
+            x = 1;
+        }
+    if ( x>= n.size()) {
+        return false;
+    }
+    for (size_t j = x; j < n.size(); j++) {
+        if (n[j] < '0' || n[j] > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+bool getVal(Frame& f, const string& text, int32_t& res) {
+    if (isNum(text)) {
+        res = stoi(text);
+        return true;
+    }
+    Variable* v = findVar(f, text);
+    if (v == nullptr) {
+        cerr << "error" << endl;
+        return false;
+    }
+    res = v->value;
+    return true;
+
+
+}
+bool set_var(Frame& f, const string& n, int32_t val) {
+
+    Variable* v= findVar(f, n);
+    if (v == nullptr) {
+        if (f.localCount >= MAX_VARS_PER_FRAME) {
+            cerr << "error. too many vars in a functon: " << f.func_name <<endl;
+
+            return false;
+        }
+        v = &f.locals[f.localCount];
+        v->name = n;
+        f.localCount++;
+    }
+    v->value = val;
+    return true;
+}
 Snapshot* buildSnapshot(Stack<Frame>& callStack)
 {
+    Snapshot* what_da_snap = new Snapshot();
+    what_da_snap->stackDepth = callStack.snapshot_into(what_da_snap->callStack, MAX_STACK_DEPTH);
+    
+    return what_da_snap;
     // build the snapshot based on the callStack given
 }
 void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& timeline)
