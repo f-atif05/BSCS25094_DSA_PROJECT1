@@ -31,6 +31,7 @@ inline constexpr const char* ERR_REPLY_CHECKSUM = "checksum mismatch, response c
 inline constexpr const char* ERR_DAMAGED_TDBG = "server sent a damaged .tdbg file";
 
 inline constexpr int64_t TTDB_HEADER_DISK_SIZE = 20;
+inline constexpr int32_t MAX_FUNCS = 100;
 
 // Helper.h should contain the structs, functions, constants, etc. that are used more than one time in the project. For example, the structs that are used in both server and client, the constants that are used in all three files. 
 

@@ -995,6 +995,151 @@ void showSnapshotFromTdbg(const char* tdbgPath, int32_t step){
     }
     fclose(f);
 }
+bool runPipeline(const char* path, string& err) {
+    ostringstream captrd;
+    streambuf* old_buf = cerr.rdbuf(captrd.rdbuf());
+    bool ok = false;
+
+    if (validateProgram(path)) {
+        int64_t mainOffset = resolveProgram(path, "resolve.bin");
+        if (mainOffset >= 0){
+        
+            Timeline timeline;
+            if (executeProgram("resolve.bin", mainOffset, timeline){
+
+                cout << "Executed " << timeline.getStepCount() << " steps" << endl;
+                ok = writeTdbg(timeline, "session.tdbg");
+            }
+        }
+    }
+    cerr.rdbuf(old_buf);
+    if (!ok){
+    
+        err = captrd.str();
+        if (err.empty()) err = "server could not process the program";
+    }
+
+
+    return ok;
+}
+
+bool receiveUpload(int sock, const char* path, string& err){
+
+    FILE* filee = fopen(path, "wb");
+
+    if (filee == NULL) {
+
+        err = "server cannot save the upload";
+        return false;
+    }
+
+    TrailerChecker checkerr;
+
+    vector<char> recieveBuffer(IO_BUFFER_SIZE);
+
+    string recievedData;
+
+    bool gotStattus = false;
+    uint8_t uploadStattus = STATUS_ERROR;
+    bool fileTooBig = false;
+    bool networkFaill = false;
+
+
+    while (true){
+    
+        ssize_t bytesRecieved = recv(sock,recieveBuffer.data(),recieveBuffer.size(),0);
+
+        if (bytesRecieved < 0){
+            if (errno == EINTR) {
+                continue;
+
+            }
+
+            networkFaill = true;
+            break;
+        }
+
+        if (bytesRecieved == 0) {
+            break;
+        }
+
+        recievedData.clear();
+
+        checkerr.feed(recieveBuffer.data(), (size_t)bytesRecieved, recievedData);
+        size_t startPoint = 0;
+
+
+        if (!gotStattus && !recievedData.empty()){
+        
+            uploadStattus = (uint8_t)recievedData[0];
+            gotStattus = true;
+            startPoint = 1;
+        }
+
+        if (recievedData.size() > startPoint){
+            fwrite(recievedData.data() + startPoint, 1, recievedData.size() - startPoint, filee);
+
+        }
+
+
+        if (checkerr.releasedBytes() > MAX_SOURCE_BYTES){
+
+            fileTooBig = true;
+            break;
+        }
+    }
+
+
+    fclose(filee);
+
+
+    if (networkFaill) {
+        err = "upload failed or timed out";
+        return false;
+    }
+
+
+    if (fileTooBig){
+        err = "source file is tooo large";
+        return false;
+    }
+    if (!checkerr.verify()){
+        err = ERR_UPLOAD_CHECKSUM;
+        return false;
+    }
+
+
+    if (uploadStattus != STATUS_OK){
+        err = "bad upload status";
+        return false;
+    }
+
+
+    return true;
+}
+void handleClient(int conn) {
+
+    // prevebts the client from waiting firver
+    timeval t;
+    t.tv_sec = SOCKET_TIMEOUT_SEC;
+    t.tv_usec = 0;
+    setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(t));
+
+
+    string err;
+    if receiveUpload(conn, "source.bin", err) && runPipeline("source.bin", err) {
+        if (!sendFramedFile(conn, STATUS_OK, "session.tdbg")){
+        
+            sendFramedMessage(conn, STATUS_ERROR, "server could nt send the .tdbg file");
+        }
+    }
+    else{
+        sendFramedMessage(conn, STATUS_ERROR, err);
+    }
+    close(conn);  // so load balacer knows the rpely is compleyte
+
+
+}
 // main section
 int32_t main(int argc, char* argv[])
 {

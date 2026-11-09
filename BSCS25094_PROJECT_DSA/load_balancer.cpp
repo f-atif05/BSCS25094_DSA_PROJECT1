@@ -68,26 +68,65 @@ public:
     // Implement these functions:
     Queue()
     {
+        front = nullptr;
+        rear = nullptr;
+        count = 0;
 
     }
     ~Queue()
     {
+        while (front != nullptr) {
+            Node* old = front;
+            front = front->next;
+            delete old;
+
+        }
 
     }
     void enqueue(const T& val)
     {
+        Node* x = new Node;
+        x->data = val;
+        x->next = nullptr;
+        if (rear == nullptr) {
+            front = x;
+
+       }
+        else {
+            rear->next = x;
+        }
+        rear = x;
+        count++;
 
     }
     T dequeue()
     {
+        if (front == nullptr) {
+            return T();
+        }
+
+        Node* x = front;
+        T value = x->data;
+        front = front->next;
+        if (front == nullptr) {
+            rear = nullptr;
+
+        }
+        delete x;
+        count--;
+        return value;
+
+
 
     }
     bool isEmpty()
     {
+        return count == 0;
 
     }
     int size()
     {
+        return count;
 
     }
 };
@@ -114,7 +153,9 @@ bool sendAll(int sock, const char* buf, size_t n)
 
 }
 bool sendError(int sock, const string& message)
+
 {
+    return sendFramedMessage(sock, STATUS_ERROR, message);
     // Reply format: [status: 1 byte][payload until close][checksum: 4 bytes].
     // For an error: send one byte with value 1, then the message text. 
 }
