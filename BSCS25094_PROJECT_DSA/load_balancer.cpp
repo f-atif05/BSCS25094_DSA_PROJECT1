@@ -152,6 +152,7 @@ bool sendAll(int sock, const char* buf, size_t n)
     // send() may send fewer bytes than asked for, so keep calling it until all n bytes are sent.
 
 }
+
 bool sendError(int sock, const string& message)
 
 {
@@ -159,8 +160,66 @@ bool sendError(int sock, const string& message)
     // Reply format: [status: 1 byte][payload until close][checksum: 4 bytes].
     // For an error: send one byte with value 1, then the message text. 
 }
+
+void setReceiveTimeout(int sock, int seconds){
+
+    timeval t;
+    t.tv_sec = seconds;
+    t.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+}
+void discardUntilEof(int sock) {
+    char byf[4096];
+    while (true) {
+        ssize_t x = recv(sock, byf, sizeof(byf), 0);
+        if (x > 0) {
+            continue;
+
+        }
+        if (x < 0&& errno == EINTR) {
+            continue;
+
+
+        }
+        break;
+
+    }
+}
 int createListenSocket(int port)
+
 {
+    int s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (s < 0) {
+        perror("socket");
+        exit(1);
+
+
+    }
+    int yes = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));   
+
+
+    sockaddr_in addr;
+
+    memset(&addr, 0, sizeof(addr));
+
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons((uint16_t)port);
+
+
+    if(bind(s, (sockaddr*)&addr, sizeof(addr)) < 0){
+
+        perror("bind");
+        exit(1);
+    }
+    if (listen(s, LISTEN_BACKLOG) < 0){
+
+    
+        perror("listen");
+        exit(1);
+    }
+    return s;
     // Create a TCP socket with SOCK_CLOEXEC(flag).
     // set SO_REUSEADDR so we can restart the load balancer right away.
     // bind() to the port on any address, then listen(LISTEN_BACKLOG).
