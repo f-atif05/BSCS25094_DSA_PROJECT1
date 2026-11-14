@@ -238,6 +238,10 @@ int connectToServer(const char* host, int port)
 
 bool startServer(int port)
 {
+    string comm = string(SERVER_PATH) + " " + to_string(port) + "&";
+    int f = system(com.c_str());
+    return (f == 0);
+
     // Build the command text: SERVER_PATH + " " + port as text + "&"
     //   Example: "./server 5001 &"
     // Call system() with it.
@@ -245,6 +249,33 @@ bool startServer(int port)
 }
 int connectToServerWithWakeup()
 {
+    int s = connectToServer(serverHost.c_str(), serverPort);
+
+    if (s >= 0) {
+        return s;
+
+
+    }
+    cout << "server is down, starting it.." << endl;
+    if (!startServer(serverPort)) {
+        return -1;
+
+    }
+
+
+    for (int x = 0; x < STARTUP_MAX_ATTEMPTS; x++) {
+        usleep(STARTUP_POLL_INTERVAL_MS * 1000);
+        s = connectToServer(serverHost.c_str(), serverPort);
+       
+
+
+        if (s >= 0) {
+            return s;
+
+        }
+    }
+    return -1;
+
     // 1. Try connectToServer(). If it works, return that socket. The server is alive.
     // 2. Otherwise call startServer(). If it fails, return -1.
     // 3. Try connectToServer() up to STARTUP_MAX_ATTEMPTS times 
@@ -256,9 +287,134 @@ int connectToServerWithWakeup()
 // PART 2: PASSING THE STRING AND THE REPLY (one client, called by the main thread only)
 // =============================================================================================
 
+UploadResult forwardUpload(int clientSock, int serverSock) {
 
+
+    TrailerChecker checker; //holds the checksum btys
+    char data[IO_BUFFER_SIZE]; //temp storafe of dATA RECV FROM CLIENT
+    string lala; //its stores the data that we r supposed to send to the serves doesnt include CRC byets
+
+    while (true) {
+        int x - recv(clientSock, data, IO_BUFFER_SIZE, 0);
+
+        if (x < 0) {
+            if (errno == EINTR) {
+
+                continue;
+
+            }
+            return 2;
+        }
+        if (x == 0) {
+            break;
+
+        }
+        lala.clear();
+        checker.feed(data, x, lala);
+        if (!sendAll(serverSock), lala.data(), lala.size()) {
+            return 3; //server failed
+
+        }
+        if (!checker.verify()) {
+            return 1; //cheksm faild
+
+        }
+        if (!sendAll(serverSock, checker.trailer(), CRC_SIZE)) {
+            return 3; // server faild
+
+        }
+        return 0; //goodieee
+
+
+        
+
+    }
+
+}
+
+
+void forwardReply(int serverSock, int clientSock) {
+    TrailerChecker checker; //holds the checksum btys
+    char data[IO_BUFFER_SIZE]; //temp storafe of dATA RECV FROM CLIENT
+    string lala; //its stores the data that we r supposed to send to the serves doesnt include CRC byets
+    bool serv_broke = false;
+
+    while (true) {
+        int x = recv(serverSock, data, IO_BUFFER_SIZE, 0);
+        if (x < 0) {
+            if (errno == EINTR) {
+                continue;
+
+            }
+            serv_broke = true;
+            break;
+
+        }
+        if (x == 0) {
+            break;
+
+        }
+        lala.clear();
+        checker.feed(data, x, lala);
+        if (!sendAll(clientSock,lala.data(), lala.size()))
+            return;
+
+        }
+
+        if (checker.releasedBytes() == 0){
+
+            sendError(clientSock, ERR_BACKEND_FAILED);
+            return;
+        }
+
+
+
+        if (serv_broke == false && checker.verify() == true) {
+            sendAll(clientSock, check.trailer(), CRC_SIZE);
+
+        }
+
+    }
+
+}
 void relayOneClient(ClientInfo& c)
 {
+    setReceiveTimeout(c.sock, CLIENT_QUEUE_TIMEOUT_SEC); //time limit for recvg data 
+    int serv_sock = connectToServerWithWakeup();
+    if (serv_sock < 0) {
+        sendError(c.sock, ERR_BACKEND_FAILED);
+        discardUntilEof(c.sock);
+        return;
+
+    }
+    setReceiveTimeout(serv_sock, SERVER_REPLY_TIMEOUT_SEC);
+    int upl = forwardUpload(c.sock, serverSock);
+
+
+    if (upl == 0) {
+        shutdown(serv_sock, SHUT_WR);
+        forwardReply(serv_sock, c.sock);
+
+    }
+    else if (upl == 1){
+    
+       
+        shutdown(serv_sock, SHUT_WR);
+        sendError(c.sock, ERR_UPLOAD_CHECKSUM);
+    }
+    else if (upl == 3){
+    
+        
+        sendError(c.sock, ERR_BACKEND_FAILED);
+        discardUntilEof(c.sock);
+    }
+
+    close(serv_sock);
+}
+
+
+
+
     // 1. serverSock = connectToServerWithWakeup().
     //    If it is -1: sendError "backend server failed to start", close clientSock, return.
     // 3. Client -> server: repeat recv() from clientSock into a buffer of IO_BUFFER_SIZE and sendAll() it to serverSock.
