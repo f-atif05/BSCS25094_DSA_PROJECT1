@@ -433,6 +433,9 @@ void relayOneClient(ClientInfo& c)
 
 void acceptLoop(int listenSock)
 {
+    while (flag) {
+
+    }
     // Repeat: accept() a new client. 
     //  If pendingClients.size() is already MAX_PENDING_CLIENTS: unlock, sendError "server busy, try again later",
     // else
