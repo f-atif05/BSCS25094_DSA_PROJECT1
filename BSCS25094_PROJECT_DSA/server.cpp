@@ -31,12 +31,12 @@ using namespace std;
 const int32_t MAX_TOKENS = MAX_VARS_PER_FRAME + 2; // kW + func_name + upto 16 params/args
 const int32_t MAX_PATCHES = MAX_FUNCS * 4;
 const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024; // sanity cap on the declared file length
-const int32_t IO_BUFFER_SIZE = 64 * 1024;                  // fixed buffer for streaming to/from disk
+/*const int32_t IO_BUFFER_SIZE = 64 * 1024;  */                // fixed buffer for streaming to/from disk
 const int32_t SOCKET_TIMEOUT_SEC = 5;                      // TODO: apply as SO_RCVTIMEO so a deadclient can't hang the server forever
 const int64_t NOT_PATCHED = -1;
 const int64_t END_OF_FILE = -2;
 const int32_t MAX_STEPS = 5000;
-
+const int32_t MAX_FUNCS = 128;
 // ---- Custom data structures
 
 // Stack: back the live Call Stack during execution
@@ -1016,7 +1016,7 @@ bool runPipeline(const char* path, string& err) {
     if (!ok){
     
         err = captrd.str();
-        if (err.empty()) err = "server could not process the program";
+        if (err.empty()) err = "server could not process the program");
     }
 
 
@@ -1127,7 +1127,7 @@ void handleClient(int conn) {
 
 
     string err;
-    if receiveUpload(conn, "source.bin", err) && runPipeline("source.bin", err) {
+    if (receiveUpload(conn, "source.bin", err) && runPipeline("source.bin", err)) {
         if (!sendFramedFile(conn, STATUS_OK, "session.tdbg")){
         
             sendFramedMessage(conn, STATUS_ERROR, "server could nt send the .tdbg file");
@@ -1141,40 +1141,97 @@ void handleClient(int conn) {
 
 }
 // main section
+//int32_t main(int argc, char* argv[])
+//{
+//    const char* path = (argc > 1) ? argv[1] : "source.bin";
+//
+//    // Pass 0x0: validate
+//    if (!validateProgram(path)){
+//        return 1;
+//    }
+//
+//    //Pass 0x1: resolve
+//    int64_t mainOffset = resolveProgram(path, "resolve.bin");
+//    if (mainOffset < 0){
+//        return 1;
+//    }
+//
+//    // Pass 0x2: execute
+//    Timeline timeline;
+//    if (!executeProgram("resolve.bin", mainOffset, timeline)){
+//        return 1;
+//    }
+//    cout << "Executed " << timeline.getStepCount() << " steps" << endl;
+//
+//    // Pass 0x3: serialize
+//    if (!writeTdbg(timeline, "session.tdbg")){
+//        return 1;
+//
+//    }
+//    cout << "session.tdbg written" << endl;
+//
+//    // optional test:  ./server source.bin 4 - reads step 4 back from the file
+//
+//    if (argc > 2){
+//        showSnapshotFromTdbg("session.tdbg", atoi(argv[2]));
+//    }
+//
+//    return 0;
+//}
+
+
 int32_t main(int argc, char* argv[])
 {
-    const char* path = (argc > 1) ? argv[1] : "source.bin";
+    int port = DEFAULT_SERVER_PORT;
 
-    // Pass 0x0: validate
-    if (!validateProgram(path)){
+    if (argc > 1) {
+        port = atoi(argv[1]);
+
+    }
+    int listenSock = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+
+    if (listenSock < 0) {
+        perror("socket");
+
+
         return 1;
     }
 
-    //Pass 0x1: resolve
-    int64_t mainOffset = resolveProgram(path, "resolve.bin");
-    if (mainOffset < 0){
+    int yes = 1;
+
+    setsockopt(listenSock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons((uint16_t)port);
+
+    if (bind(listenSock, (sockaddr*)&addr, sizeof(addr)) < 0 || listen(listenSock, 8) < 0) {
+        perror("bind/listen");
+
+
         return 1;
     }
 
-    // Pass 0x2: execute
-    Timeline timeline;
-    if (!executeProgram("resolve.bin", mainOffset, timeline)){
-        return 1;
+    cout << "server listening on port " << port << endl;
+
+    while (true){
+    
+        int conn = accept(listenSock, nullptr, nullptr);
+        if (conn < 0) {
+
+
+            if (errno == EINTR) {
+                continue;
+            }
+
+            perror("accept");
+            continue;
+        }
+        handleClient(conn);
     }
-    cout << "Executed " << timeline.getStepCount() << " steps" << endl;
 
-    // Pass 0x3: serialize
-    if (!writeTdbg(timeline, "session.tdbg")){
-        return 1;
-
-    }
-    cout << "session.tdbg written" << endl;
-
-    // optional test:  ./server source.bin 4 - reads step 4 back from the file
-
-    if (argc > 2){
-        showSnapshotFromTdbg("session.tdbg", atoi(argv[2]));
-    }
 
     return 0;
 }

@@ -34,13 +34,18 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <cstring>
+#include <ctime>
+#include <cerrno>
+#include <vector>
+#include <sys/time.h>
 #include "helper.h"
 using namespace std;
 
 
 // ---- Constants ----
 const char* SERVER_PATH = "./server";      // the program we start when the server is down
-const int IO_BUFFER_SIZE = 64 * 1024;      // fixed buffer for moving bytes
+/*const int IO_BUFFER_SIZE = 64 * 1024;   */   // fixed buffer for moving bytes
 const int LISTEN_BACKLOG = 16;             // connections the OS holds until accept() takes them
 const int MAX_PENDING_CLIENTS = 8;         // clients allowed to wait in our queue. More than this get "server busy".
 const int STARTUP_MAX_ATTEMPTS = 50;       // after starting the server, how many times we try to connect
@@ -48,7 +53,9 @@ const int STARTUP_POLL_INTERVAL_MS = 100;  // wait between those tries (50 x 100
 int lbPort = 5000;
 string serverHost = "127.0.0.0";
 int serverPort = 5001;
-
+const int SERVER_REPLY_TIMEOUT_SEC = 30;
+const int DISPATCHER_IDLE_SLEEP_MS = 50;
+const int CLIENT_UPLOAD_TIMEOUT_SEC = 10;
 
 // ---- Queue: here it holds client sockets (int). ----
 // Implement it yourself, do not use std::queue.
@@ -146,12 +153,12 @@ sig_atomic_t flag = 1;
 
 
 // ---- Basic socket helpers ----
-bool sendAll(int sock, const char* buf, size_t n)
-{
-    // Reply format: [status: 1 byte][sending_material][checksum: 4 bytes].
-    // send() may send fewer bytes than asked for, so keep calling it until all n bytes are sent.
-
-}
+//bool sendAll(int sock, const char* buf, size_t n)
+//{
+//    // Reply format: [status: 1 byte][sending_material][checksum: 4 bytes].
+//    // send() may send fewer bytes than asked for, so keep calling it until all n bytes are sent.
+//
+//}
 
 bool sendError(int sock, const string& message)
 
@@ -166,7 +173,7 @@ void setReceiveTimeout(int sock, int seconds){
     timeval t;
     t.tv_sec = seconds;
     t.tv_usec = 0;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t));
 }
 void discardUntilEof(int sock) {
     char byf[4096];
@@ -226,7 +233,34 @@ int createListenSocket(int port)
     // If bind or listen fails, print the error and exit, because without this socket we cannot work.
 }
 int connectToServer(const char* host, int port)
+
 {
+
+    int s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+
+    if (s < 0) {
+        return -1;
+    }
+
+    sockaddr_in  addr;
+    memset(&addr, 0,  sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+
+    if (inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
+        close(s);
+
+        return -1;
+    }
+
+    if (connect(s, (sockaddr*)&addr, sizeof(addr)) < 0) {
+        close(s);
+
+        return -1;
+    }
+
+    return s;
+
     // Create a TCP socket (SOCK_CLOEXEC) and connect it to host:port.
     // Return the socket, or -1 if the connection fails 
 }
@@ -239,7 +273,7 @@ int connectToServer(const char* host, int port)
 bool startServer(int port)
 {
     string comm = string(SERVER_PATH) + " " + to_string(port) + "&";
-    int f = system(com.c_str());
+    int f = system(comm.c_str());
     return (f == 0);
 
     // Build the command text: SERVER_PATH + " " + port as text + "&"
@@ -287,7 +321,7 @@ int connectToServerWithWakeup()
 // PART 2: PASSING THE STRING AND THE REPLY (one client, called by the main thread only)
 // =============================================================================================
 
-UploadResult forwardUpload(int clientSock, int serverSock) {
+int forwardUpload(int clientSock, int serverSock) {
 
 
     TrailerChecker checker; //holds the checksum btys
@@ -295,7 +329,7 @@ UploadResult forwardUpload(int clientSock, int serverSock) {
     string lala; //its stores the data that we r supposed to send to the serves doesnt include CRC byets
 
     while (true) {
-        int x - recv(clientSock, data, IO_BUFFER_SIZE, 0);
+        int x = recv(clientSock, data, IO_BUFFER_SIZE, 0);
 
         if (x < 0) {
             if (errno == EINTR) {
@@ -311,7 +345,7 @@ UploadResult forwardUpload(int clientSock, int serverSock) {
         }
         lala.clear();
         checker.feed(data, x, lala);
-        if (!sendAll(serverSock), lala.data(), lala.size()) {
+        if (!sendAll(serverSock), lala.data(), lala.size())) {
             return 3; //server failed
 
         }
@@ -323,12 +357,13 @@ UploadResult forwardUpload(int clientSock, int serverSock) {
             return 3; // server faild
 
         }
-        return 0; //goodieee
-
+        
 
         
 
     }
+    return 0; //goodieee
+
 
 }
 
@@ -370,7 +405,7 @@ void forwardReply(int serverSock, int clientSock) {
 
 
         if (serv_broke == false && checker.verify() == true) {
-            sendAll(clientSock, check.trailer(), CRC_SIZE);
+            sendAll(clientSock, checker.trailer(), CRC_SIZE);
 
         }
 
@@ -379,7 +414,7 @@ void forwardReply(int serverSock, int clientSock) {
 }
 void relayOneClient(ClientInfo& c)
 {
-    setReceiveTimeout(c.sock, CLIENT_QUEUE_TIMEOUT_SEC); //time limit for recvg data 
+    setReceiveTimeout(c.sock, CLIENT_UPLOAD_TIMEOUT_SEC); //time limit for recvg data 
     int serv_sock = connectToServerWithWakeup();
     if (serv_sock < 0) {
         sendError(c.sock, ERR_BACKEND_FAILED);
@@ -388,7 +423,7 @@ void relayOneClient(ClientInfo& c)
 
     }
     setReceiveTimeout(serv_sock, SERVER_REPLY_TIMEOUT_SEC);
-    int upl = forwardUpload(c.sock, serverSock);
+    int upl = forwardUpload(c.sock, serv_sock);
 
 
     if (upl == 0) {
@@ -410,7 +445,7 @@ void relayOneClient(ClientInfo& c)
     }
 
     close(serv_sock);
-}
+
 
 
 
@@ -433,8 +468,48 @@ void relayOneClient(ClientInfo& c)
 
 void acceptLoop(int listenSock)
 {
-    while (flag) {
+    while (flag){
+        sockaddr_in addr;
+        socklen_t addrLen = sizeof(addr);
+        int clientSock = accept4(listenSock, (sockaddr*)&addr, &addrLen, SOCK_CLOEXEC);
 
+
+        if (clientSock < 0) {
+            if (flag && errno != EINTR) {
+                perror("accept");
+                usleep(100 * 1000);
+            }
+            continue;
+        }
+
+        ClientInfo client;
+        client.sock = clientSock;
+        char ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
+        client.address = ip;
+        client.port = ntohs(addr.sin_port);
+        client.arrivedAt = time(nullptr);
+
+        bool queueFull = false;
+
+        {
+            lock_guard<mutex> lock(queueMutex);
+
+            if (pendingClients.size() >= MAX_PENDING_CLIENTS) {
+                queueFull = true;
+            }
+            else {
+                pendingClients.enqueue(client);
+            }
+        }
+
+        if (queueFull) {
+
+            cout << "Load balancer queue full, refusing " << client.address << ":" << client.port << endl;
+            sendError(client.sock, ERR_SERVER_BUSY);
+            shutdown(client.sock, SHUT_WR);
+            close(client.sock);
+        }
     }
     // Repeat: accept() a new client. 
     //  If pendingClients.size() is already MAX_PENDING_CLIENTS: unlock, sendError "server busy, try again later",
@@ -447,6 +522,42 @@ void acceptLoop(int listenSock)
 }
 void dispatcherLoop()
 {
+    while (flag){
+        ClientInfo client;
+        bool gotClient = false;
+
+        {
+            lock_guard<mutex> lock(queueMutex);
+
+            if (!pendingClients.isEmpty()) {
+                client = pendingClients.dequeue();
+                gotClient = true;
+            }
+        }
+
+        if (!gotClient) {
+            usleep(DISPATCHER_IDLE_SLEEP_MS * 1000);
+
+
+            continue;
+        }
+        if (time(nullptr) - client.arrivedAt > CLIENT_QUEUE_TIMEOUT_SEC) {
+
+            cout << "Load Balanver - " << client.address << ":"  << client.port << " waited too long, dropping" << endl;
+
+            close(client.sock);
+
+            continue;
+
+        }
+
+        cout << "Load Balanver serving " << client.address << ":" << client.port << endl;
+
+        relayOneClient(client);
+        close(client.sock);
+
+        cout << "Load Balanver done with " << client.address << ":" << client.port << endl;
+    }
     // This runs in the main thread and never ends.
     // Repeat:
     //   Lock queueMutex, take ONE client out of the queue if there is one, unlock.
@@ -459,8 +570,41 @@ void handler(int sg) {
 }
 int main(int argc, char* argv[])
 {
+    if (argc >= 2) {
+        serverHost = argv[1];
+    }
+
+    if (argc >=  3) {
+        serverPort =  atoi(argv[2]);
+    }
+
+    if (argc >= 4) {
+        lbPort =  atoi(argv[3]);
+    }
+
 
     signal(SIGINT, handler); // whenever ctrl+c will be pressed to exit the program the flag wll be set so insead of using infinite loop you can loop on flag to safely close things and exit
+    int listenSock = createListenSocket(lbPort);
+
+    cout << "load balance listening on port " << lbPort << ", server at " << serverHost << ":" << serverPort << endl;
+
+    thread acceptor(acceptLoop, listenSock);
+    acceptor.detach();
+    dispatcherLoop();
+
+    cout << "load balancer shutting down" << endl;
+
+    {
+        lock_guard<mutex> lock(queueMutex);
+
+        while (!pendingClients.isEmpty()) {
+            ClientInfo client = pendingClients.dequeue();
+            close(client.sock);
+        }
+    }
+
+    close(listenSock);
+
     // 2. listenSock = createListenSocket(LB_PORT).
     // 3. Start a thread that runs acceptLoop(listenSock) and detach it.
     // 4. Call dispatcherLoop().
