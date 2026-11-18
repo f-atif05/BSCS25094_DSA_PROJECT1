@@ -32,5 +32,9 @@ I added few function in server.cpp according to the network layer. And fixed err
 
 14th November  
 
-I fixed the progress.md and I am almost done with my load balancer. I could have finished it today, but I am too haggard to write even a single line of code. This project is just draining my energy atp. BDBUHWEBUDHDUWJENNCBWH.
+I fixed the progress.md and I am almost done with my load balancer. I could have finished it today, but I am too haggard to write even a single line of code. This project is just draining my energy atp. BDBUHWEBUDHDUWJENNCBWH.  
+
+15th November  
+
+Today, I have completed load balancer and fixed errors in lb and server. The errors were so lame. 
 
