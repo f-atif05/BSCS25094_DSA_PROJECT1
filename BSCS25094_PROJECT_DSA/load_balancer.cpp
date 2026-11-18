@@ -345,7 +345,7 @@ int forwardUpload(int clientSock, int serverSock) {
         }
         lala.clear();
         checker.feed(data, x, lala);
-        if (!sendAll(serverSock), lala.data(), lala.size())) {
+        if (!sendAll(serverSock, lala.data(), lala.size())) {
             return 3; //server failed
 
         }
@@ -391,7 +391,7 @@ void forwardReply(int serverSock, int clientSock) {
         }
         lala.clear();
         checker.feed(data, x, lala);
-        if (!sendAll(clientSock,lala.data(), lala.size()))
+        if (!sendAll(clientSock,lala.data(), lala.size())){
             return;
 
         }

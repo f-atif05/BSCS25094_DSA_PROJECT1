@@ -180,7 +180,7 @@ inline void putU32LE(uint32_t a, char x[4]) {
 }
 inline uint32_t getU32LE(const char x[4]) {
 
-   uint32_t f = (uint32_t(unsigned char)x[0]) | 
+   uint32_t f = (uint32_t)(unsigned char)x[0] |
        ((uint32_t)(unsigned char)x[1] << 8) | 
        ((uint32_t)(unsigned char)x[2] << 16)| 
        

@@ -36,7 +36,7 @@ const int32_t SOCKET_TIMEOUT_SEC = 5;                      // TODO: apply as SO_
 const int64_t NOT_PATCHED = -1;
 const int64_t END_OF_FILE = -2;
 const int32_t MAX_STEPS = 5000;
-const int32_t MAX_FUNCS = 128;
+//const int32_t MAX_FUNCS = 100;
 // ---- Custom data structures
 
 // Stack: back the live Call Stack during execution
@@ -1005,7 +1005,7 @@ bool runPipeline(const char* path, string& err) {
         if (mainOffset >= 0){
         
             Timeline timeline;
-            if (executeProgram("resolve.bin", mainOffset, timeline){
+            if (executeProgram("resolve.bin", mainOffset, timeline)){
 
                 cout << "Executed " << timeline.getStepCount() << " steps" << endl;
                 ok = writeTdbg(timeline, "session.tdbg");
@@ -1016,7 +1016,7 @@ bool runPipeline(const char* path, string& err) {
     if (!ok){
     
         err = captrd.str();
-        if (err.empty()) err = "server could not process the program");
+        if (err.empty() err = "server could not process the program");
     }
 
 
@@ -1123,7 +1123,7 @@ void handleClient(int conn) {
     timeval t;
     t.tv_sec = SOCKET_TIMEOUT_SEC;
     t.tv_usec = 0;
-    setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(t));
+    setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t));
 
 
     string err;
