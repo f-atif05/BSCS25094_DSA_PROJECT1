@@ -51,7 +51,7 @@ const int MAX_PENDING_CLIENTS = 8;         // clients allowed to wait in our que
 const int STARTUP_MAX_ATTEMPTS = 50;       // after starting the server, how many times we try to connect
 const int STARTUP_POLL_INTERVAL_MS = 100;  // wait between those tries (50 x 100 ms = 5 seconds in total)
 int lbPort = 5000;
-string serverHost = "127.0.0.0";
+string serverHost = DEFAULT_HOST;
 int serverPort = 5001;
 const int SERVER_REPLY_TIMEOUT_SEC = 30;
 const int DISPATCHER_IDLE_SLEEP_MS = 50;
@@ -349,6 +349,8 @@ int forwardUpload(int clientSock, int serverSock) {
             return 3; //server failed
 
         }
+    }
+
         if (!checker.verify()) {
             return 1; //cheksm faild
 
@@ -361,7 +363,7 @@ int forwardUpload(int clientSock, int serverSock) {
 
         
 
-    }
+    
     return 0; //goodieee
 
 
@@ -391,10 +393,11 @@ void forwardReply(int serverSock, int clientSock) {
         }
         lala.clear();
         checker.feed(data, x, lala);
-        if (!sendAll(clientSock,lala.data(), lala.size())){
+        if (!sendAll(clientSock, lala.data(), lala.size())) {
             return;
 
         }
+    }
 
         if (checker.releasedBytes() == 0){
 
@@ -409,7 +412,7 @@ void forwardReply(int serverSock, int clientSock) {
 
         }
 
-    }
+    
 
 }
 void relayOneClient(ClientInfo& c)

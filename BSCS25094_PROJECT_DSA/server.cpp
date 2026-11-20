@@ -22,6 +22,7 @@
 #include <cstring>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <exception> 
 #include "helper.h"
 #include <vector>
 using namespace std;
@@ -36,6 +37,7 @@ const int32_t SOCKET_TIMEOUT_SEC = 5;                      // TODO: apply as SO_
 const int64_t NOT_PATCHED = -1;
 const int64_t END_OF_FILE = -2;
 const int32_t MAX_STEPS = 5000;
+const char* RECEIVED_FILE = "received_source.bin";
 //const int32_t MAX_FUNCS = 100;
 // ---- Custom data structures
 
@@ -557,8 +559,19 @@ bool isNum(const string& n) {
     return true;
 }
 bool getVal(Frame& f, const string& text, int32_t& res) {
+
     if (isNum(text)) {
-        res = stoi(text);
+        errno = 0;
+
+        long long big =  strtoll(text.c_str(), nullptr, 10);
+        if (errno == ERANGE || big < INT32_MIN || big >  INT32_MAX) {
+            cerr << "error. number does not fit in 32 bits: " << text << endl;
+
+            return false;
+        }
+
+         
+        res = (int32_t)big;
         return true;
     }
     Variable* v = findVar(f, text);
@@ -999,24 +1012,34 @@ bool runPipeline(const char* path, string& err) {
     ostringstream captrd;
     streambuf* old_buf = cerr.rdbuf(captrd.rdbuf());
     bool ok = false;
+    try {
+        if (validateProgram(path)) {
+            int64_t mainOffset = resolveProgram(path, "resolve.bin");
+            if (mainOffset >= 0) {
 
-    if (validateProgram(path)) {
-        int64_t mainOffset = resolveProgram(path, "resolve.bin");
-        if (mainOffset >= 0){
-        
-            Timeline timeline;
-            if (executeProgram("resolve.bin", mainOffset, timeline)){
+                Timeline timeline;
+                if (executeProgram("resolve.bin", mainOffset, timeline)) {
 
-                cout << "Executed " << timeline.getStepCount() << " steps" << endl;
-                ok = writeTdbg(timeline, "session.tdbg");
+                    cout << "Executed " << timeline.getStepCount() << " steps" << endl;
+                    ok = writeTdbg(timeline, "session.tdbg");
+                }
             }
         }
+    }
+    catch (const exception& e) {
+         cerr << "internal servr error: " << e.what() << endl;
+
+
+        ok = false;
     }
     cerr.rdbuf(old_buf);
     if (!ok){
     
         err = captrd.str();
-        if (err.empty() err = "server could not process the program");
+        if (err.empty()) {
+
+            err = "server could not process the program";
+        }
     }
 
 
@@ -1127,7 +1150,7 @@ void handleClient(int conn) {
 
 
     string err;
-    if (receiveUpload(conn, "source.bin", err) && runPipeline("source.bin", err)) {
+    if (receiveUpload(conn, RECEIVED_FILE, err) && runPipeline(RECEIVED_FILE, err)) {
         if (!sendFramedFile(conn, STATUS_OK, "session.tdbg")){
         
             sendFramedMessage(conn, STATUS_ERROR, "server could nt send the .tdbg file");
