@@ -36,5 +36,8 @@ I fixed the progress.md and I am almost done with my load balancer. I could have
 
 15th November  
 
-Today, I have completed load balancer and fixed errors in lb and server. The errors were so lame. 
+Today, I have completed load balancer and fixed errors in lb and server. The errors were so lame.  
+
+18th November  
+I have completed all the files but it's not compiling well, throwing errors. So, I am just left with fixing that.
 
